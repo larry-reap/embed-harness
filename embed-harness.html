@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- Card reveal embedding test harness (served verbatim from public/).
+     Usage: /embed-harness.html?url=<reveal.url>&authorization=<reveal.authorization>&iv=<reveal.iv>&card=<cardId>
+       optional &types=cardNumber,expiryDate,cvv,companyAddress (default all four; use `address` for non-owner)
+     Values must be URL-encoded (same credential works for all field iframes, like the dashboard modal).
+     Pass = every iframe visibly renders its field AND the copy round-trip succeeds. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Reap card reveal — embedding test harness</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 2rem; }
+    .field { margin: 1rem 0; }
+    .field label { font-weight: 600; display: block; margin-bottom: 4px; }
+    iframe { width: 400px; height: 80px; border: 2px dashed #888; display: block; }
+    #log div { margin: 2px 0; }
+    .ok { color: green; } .fail { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Card reveal embedding harness</h1>
+  <div>Page origin: <code id="origin"></code></div>
+  <div id="fields"></div>
+  <button id="copy">Request copy of card number (postMessage handshake)</button>
+  <div id="log"></div>
+  <script>
+    const log = (msg, cls) => {
+      const d = document.createElement('div');
+      d.textContent = `${new Date().toISOString().slice(11, 19)} ${msg}`;
+      if (cls) d.className = cls;
+      document.getElementById('log').appendChild(d);
+    };
+    document.getElementById('origin').textContent = location.origin;
+
+    const q = new URLSearchParams(location.search);
+    const revealUrl = q.get('url'), auth = q.get('authorization'), iv = q.get('iv'), card = q.get('card');
+    const types = (q.get('types') || 'cardNumber,expiryDate,cvv,companyAddress').split(',');
+
+    let iframeOrigin, panIframe;
+    if (revealUrl && auth && iv && card) {
+      iframeOrigin = new URL(revealUrl).origin;
+      for (const type of types) {
+        // mirror dashboard buildRevealSrc: searchParams encoding, type per iframe, shared credential
+        const u = new URL(`/card/${card}/info`, revealUrl);
+        u.searchParams.set('type', type);
+        u.searchParams.set('authorization', auth);
+        u.searchParams.set('iv', iv);
+        const wrap = document.createElement('div');
+        wrap.className = 'field';
+        const label = document.createElement('label');
+        label.textContent = type;
+        const f = document.createElement('iframe');
+        f.title = type;
+        f.src = u.toString();
+        f.onload = () => log(`${type}: iframe load fired (render is the real check — CSP block also fires load)`);
+        wrap.append(label, f);
+        document.getElementById('fields').appendChild(wrap);
+        if (type === 'cardNumber') panIframe = f;
+      }
+    } else {
+      log('missing params — need ?url=&authorization=&iv=&card= from a fresh reveal credential', 'fail');
+    }
+
+    // Reply only arrives if the renderer's origin gate accepts this page's origin.
+    window.addEventListener('message', (e) => {
+      if (e.origin !== iframeOrigin) return;
+      try {
+        const data = JSON.parse(e.data);
+        if (data.action === 'reap-card-copy') {
+          clearTimeout(pending);
+          log(`PASS: copy round-trip ok — got value ending …${String(data.value).slice(-4)}`, 'ok');
+        }
+      } catch (_) {}
+    });
+
+    let pending;
+    document.getElementById('copy').onclick = () => {
+      if (!panIframe) return log('no cardNumber iframe', 'fail');
+      log(`sending reap-card-request-copy to ${iframeOrigin}`);
+      panIframe.contentWindow.postMessage(JSON.stringify({ action: 'reap-card-request-copy' }), iframeOrigin);
+      clearTimeout(pending);
+      pending = setTimeout(() => log('FAIL: no reply within 3s (CSP block or origin gate rejected us)', 'fail'), 3000);
+    };
+  </script>
+</body>
+</html>
