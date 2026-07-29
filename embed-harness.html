@@ -1,8 +1,9 @@
 <!doctype html>
 <!-- Card reveal embedding test harness (served verbatim from public/).
-     Usage: /embed-harness.html?url=<reveal.url>&authorization=<reveal.authorization>&iv=<reveal.iv>&card=<cardId>
+     Usage A: paste the reveal response JSON ({url, authorization, iv}) + card ID into the form.
+     Usage B: /embed-harness.html?url=<reveal.url>&authorization=<reveal.authorization>&iv=<reveal.iv>&card=<cardId>
        optional &types=cardNumber,expiryDate,cvv,companyAddress (default all four; use `address` for non-owner)
-     Values must be URL-encoded (same credential works for all field iframes, like the dashboard modal).
+       (query-param values must be URL-encoded; same credential works for all field iframes, like the dashboard modal)
      Pass = every iframe visibly renders its field AND the copy round-trip succeeds. -->
 <html lang="en">
 <head>
@@ -20,6 +21,13 @@
 <body>
   <h1>Card reveal embedding harness</h1>
   <div>Page origin: <code id="origin"></code></div>
+  <form id="paste" style="margin:1rem 0; padding:1rem; border:1px solid #ccc; max-width:640px;">
+    <label for="payload" style="font-weight:600;">Reveal response JSON ({url, authorization, iv} — single-use, 60s TTL)</label>
+    <textarea id="payload" rows="5" style="width:100%; box-sizing:border-box;" placeholder='{"url":"https://...","authorization":"...","iv":"..."}'></textarea>
+    <label for="cardId" style="font-weight:600;">Card ID</label>
+    <input id="cardId" style="width:100%; box-sizing:border-box;" value="cf510fa8-59fb-49d1-b0b4-4740b72bb992">
+    <button type="submit" style="margin-top:8px;">Render</button>
+  </form>
   <div id="fields"></div>
   <button id="copy">Request copy of card number (postMessage handshake)</button>
   <div id="log"></div>
@@ -37,7 +45,9 @@
     const types = (q.get('types') || 'cardNumber,expiryDate,cvv,companyAddress').split(',');
 
     let iframeOrigin, panIframe;
-    if (revealUrl && auth && iv && card) {
+    const render = (revealUrl, auth, iv, card) => {
+      document.getElementById('fields').replaceChildren();
+      panIframe = undefined;
       iframeOrigin = new URL(revealUrl).origin;
       for (const type of types) {
         // mirror dashboard buildRevealSrc: searchParams encoding, type per iframe, shared credential
@@ -57,9 +67,29 @@
         document.getElementById('fields').appendChild(wrap);
         if (type === 'cardNumber') panIframe = f;
       }
+    };
+
+    if (revealUrl && auth && iv && card) {
+      render(revealUrl, auth, iv, card);
     } else {
-      log('missing params — need ?url=&authorization=&iv=&card= from a fresh reveal credential', 'fail');
+      log('paste a reveal response above, or pass ?url=&authorization=&iv=&card=');
     }
+
+    document.getElementById('paste').onsubmit = (ev) => {
+      ev.preventDefault();
+      const cardId = document.getElementById('cardId').value.trim();
+      let r;
+      try {
+        r = JSON.parse(document.getElementById('payload').value);
+      } catch (_) {
+        return log('FAIL: payload is not valid JSON', 'fail');
+      }
+      if (!r.url || !r.authorization || !r.iv || !cardId) {
+        return log('FAIL: need url, authorization, iv in the JSON and a card ID', 'fail');
+      }
+      log(`rendering from pasted credential for card …${cardId.slice(-4)}`);
+      render(r.url, r.authorization, r.iv, cardId);
+    };
 
     // Reply only arrives if the renderer's origin gate accepts this page's origin.
     window.addEventListener('message', (e) => {
