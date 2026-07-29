@@ -11,9 +11,9 @@
   <title>Reap card reveal — embedding test harness</title>
   <style>
     body { font-family: -apple-system, sans-serif; margin: 2rem; }
-    .field { margin: 1rem 0; }
+    .field { margin: 0.5rem 0; }
     .field label { font-weight: 600; display: block; margin-bottom: 4px; }
-    iframe { width: 400px; height: 80px; border: 2px dashed #888; display: block; }
+    iframe { width: 400px; height: 48px; border: 2px dashed #888; display: block; }
     #log div { margin: 2px 0; }
     .ok { color: green; } .fail { color: red; }
   </style>
@@ -98,7 +98,11 @@
         const data = JSON.parse(e.data);
         if (data.action === 'reap-card-copy') {
           clearTimeout(pending);
-          log(`PASS: copy round-trip ok — got value ending …${String(data.value).slice(-4)}`, 'ok');
+          const tail = String(data.value).slice(-4);
+          navigator.clipboard.writeText(String(data.value)).then(
+            () => log(`PASS: copy round-trip ok — copied to clipboard, ending …${tail}`, 'ok'),
+            (err) => log(`PASS: round-trip ok (ending …${tail}) but clipboard write failed: ${err}`, 'fail'),
+          );
         }
       } catch (_) {}
     });
